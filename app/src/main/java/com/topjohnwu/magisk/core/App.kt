@@ -1,24 +1,21 @@
 package com.topjohnwu.magisk.core
 
+import android.annotation.SuppressLint
+import android.app.Activity
 import android.app.Application
 import android.content.Context
 import android.content.res.Configuration
+import android.os.Bundle
 import androidx.appcompat.app.AppCompatDelegate
-import androidx.multidex.MultiDex
 import androidx.work.WorkManager
-import com.topjohnwu.magisk.BuildConfig
 import com.topjohnwu.magisk.DynAPK
-import com.topjohnwu.magisk.FileProvider
-import com.topjohnwu.magisk.core.su.SuCallbackHandler
-import com.topjohnwu.magisk.core.utils.RootInit
+import com.topjohnwu.magisk.core.utils.AppShellInit
+import com.topjohnwu.magisk.core.utils.BusyBoxInit
+import com.topjohnwu.magisk.core.utils.IODispatcherExecutor
 import com.topjohnwu.magisk.core.utils.updateConfig
-import com.topjohnwu.magisk.di.ActivityTracker
-import com.topjohnwu.magisk.di.koinModules
-import com.topjohnwu.magisk.extensions.get
-import com.topjohnwu.magisk.extensions.unwrap
+import com.topjohnwu.magisk.di.ServiceLocator
+import com.topjohnwu.magisk.ktx.unwrap
 import com.topjohnwu.superuser.Shell
-import org.koin.android.ext.koin.androidContext
-import org.koin.core.context.startKoin
 import timber.log.Timber
 import kotlin.system.exitProcess
 
@@ -30,11 +27,11 @@ open class App() : Application() {
 
     init {
         AppCompatDelegate.setCompatVectorFromResourcesEnabled(true)
-        Shell.Config.setFlags(Shell.FLAG_MOUNT_MASTER)
-        Shell.Config.verboseLogging(BuildConfig.DEBUG)
-        Shell.Config.addInitializers(RootInit::class.java)
-        Shell.Config.setTimeout(2)
-        FileProvider.callHandler = SuCallbackHandler
+        Shell.setDefaultBuilder(Shell.Builder.create()
+            .setFlags(Shell.FLAG_MOUNT_MASTER)
+            .setInitializers(BusyBoxInit::class.java, AppShellInit::class.java)
+            .setTimeout(2))
+        Shell.EXECUTOR = IODispatcherExecutor()
 
         // Always log full stack trace with Timber
         Timber.plant(Timber.DebugTree())
@@ -45,10 +42,6 @@ open class App() : Application() {
     }
 
     override fun attachBaseContext(base: Context) {
-        // Basic setup
-        if (BuildConfig.DEBUG)
-            MultiDex.install(base)
-
         // Some context magic
         val app: Application
         val impl: Context
@@ -62,13 +55,9 @@ open class App() : Application() {
         val wrapped = impl.wrap()
         super.attachBaseContext(wrapped)
 
-        // Normal startup
-        startKoin {
-            androidContext(wrapped)
-            modules(koinModules)
-        }
-        ResMgr.init(impl)
-        app.registerActivityLifecycleCallbacks(get<ActivityTracker>())
+        ServiceLocator.context = wrapped
+        AssetHack.init(impl)
+        app.registerActivityLifecycleCallbacks(ForegroundTracker)
         WorkManager.initialize(impl.wrapJob(), androidx.work.Configuration.Builder().build())
     }
 
@@ -82,4 +71,27 @@ open class App() : Application() {
         if (!isRunningAsStub)
             super.onConfigurationChanged(newConfig)
     }
+}
+
+@SuppressLint("StaticFieldLeak")
+object ForegroundTracker : Application.ActivityLifecycleCallbacks {
+
+    @Volatile
+    var foreground: Activity? = null
+
+    val hasForeground get() = foreground != null
+
+    override fun onActivityResumed(activity: Activity) {
+        foreground = activity
+    }
+
+    override fun onActivityPaused(activity: Activity) {
+        foreground = null
+    }
+
+    override fun onActivityCreated(activity: Activity, bundle: Bundle?) {}
+    override fun onActivityStarted(activity: Activity) {}
+    override fun onActivityStopped(activity: Activity) {}
+    override fun onActivitySaveInstanceState(activity: Activity, bundle: Bundle) {}
+    override fun onActivityDestroyed(activity: Activity) {}
 }

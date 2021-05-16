@@ -16,8 +16,14 @@
 #define SYSEXT_POLICY_DIR   "/system_ext/etc/selinux/"
 #define SPLIT_PLAT_CIL      PLAT_POLICY_DIR "plat_sepolicy.cil"
 
+// Unconstrained domain the daemon and root processes run in
 #define SEPOL_PROC_DOMAIN   "magisk"
-#define SEPOL_FILE_DOMAIN   "magisk_file"
+// Highly constrained domain, sole purpose is to connect to daemon
+#define SEPOL_CLIENT_DOMAIN "magisk_client"
+// Unconstrained file type that anyone can access
+#define SEPOL_FILE_TYPE     "magisk_file"
+// Special file type to allow clients to transit to client domain automatically
+#define SEPOL_EXEC_TYPE     "magisk_exec"
 
 extern void (*freecon)(char *con);
 extern int (*setcon)(const char *con);
@@ -30,7 +36,6 @@ extern int (*fsetfilecon)(int fd, const char *con);
 void getfilecon_at(int dirfd, const char *name, char **con);
 void setfilecon_at(int dirfd, const char *name, const char *con);
 
-void selinux_builtin_impl();
-void dload_selinux();
+void enable_selinux();
 void restorecon();
 void restore_tmpcon();

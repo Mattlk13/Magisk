@@ -5,38 +5,37 @@ import android.content.Context
 import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Bundle
-import android.view.Menu
-import android.view.MenuInflater
-import android.view.MenuItem
-import android.view.View
-import androidx.core.net.toUri
+import android.view.*
 import androidx.navigation.NavDeepLinkBuilder
+import com.topjohnwu.magisk.MainDirections
 import com.topjohnwu.magisk.R
+import com.topjohnwu.magisk.arch.BaseUIFragment
 import com.topjohnwu.magisk.core.Const
 import com.topjohnwu.magisk.core.cmp
 import com.topjohnwu.magisk.databinding.FragmentFlashMd2Binding
+import com.topjohnwu.magisk.di.viewModel
 import com.topjohnwu.magisk.ui.MainActivity
-import com.topjohnwu.magisk.ui.base.BaseUIActivity
-import com.topjohnwu.magisk.ui.base.BaseUIFragment
-import org.koin.androidx.viewmodel.ext.android.viewModel
-import org.koin.core.parameter.parametersOf
-import java.io.File
-import com.topjohnwu.magisk.MainDirections.Companion.actionFlashFragment as toFlash
-import com.topjohnwu.magisk.ui.flash.FlashFragmentArgs as args
 
 class FlashFragment : BaseUIFragment<FlashViewModel, FragmentFlashMd2Binding>() {
 
     override val layoutRes = R.layout.fragment_flash_md2
-    override val viewModel by viewModel<FlashViewModel> {
-        parametersOf(args.fromBundle(requireArguments()))
-    }
+    override val viewModel by viewModel<FlashViewModel>()
 
     private var defaultOrientation = -1
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        viewModel.args = FlashFragmentArgs.fromBundle(requireArguments())
+    }
 
     override fun onStart() {
         super.onStart()
         setHasOptionsMenu(true)
         activity.setTitle(R.string.flash_screen_title)
+
+        viewModel.subtitle.observe(this) {
+            activity.supportActionBar?.setSubtitle(it)
+        }
     }
 
     override fun onCreateOptionsMenu(menu: Menu, inflater: MenuInflater) {
@@ -52,6 +51,7 @@ class FlashFragment : BaseUIFragment<FlashViewModel, FragmentFlashMd2Binding>() 
 
         defaultOrientation = activity.requestedOrientation
         activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_NOSENSOR
+        viewModel.startFlashing()
     }
 
     @SuppressLint("WrongConstant")
@@ -60,6 +60,14 @@ class FlashFragment : BaseUIFragment<FlashViewModel, FragmentFlashMd2Binding>() 
             activity.requestedOrientation = defaultOrientation
         }
         super.onDestroyView()
+    }
+
+    override fun onKeyEvent(event: KeyEvent): Boolean {
+        return when(event.keyCode) {
+            KeyEvent.KEYCODE_VOLUME_UP,
+            KeyEvent.KEYCODE_VOLUME_DOWN -> true
+            else -> false
+        }
     }
 
     override fun onBackPressed(): Boolean {
@@ -71,7 +79,7 @@ class FlashFragment : BaseUIFragment<FlashViewModel, FragmentFlashMd2Binding>() 
 
     companion object {
 
-        private fun createIntent(context: Context, args: args) =
+        private fun createIntent(context: Context, args: FlashFragmentArgs) =
             NavDeepLinkBuilder(context)
                 .setGraph(R.navigation.main)
                 .setComponentName(MainActivity::class.java.cmp(context.packageName))
@@ -84,61 +92,36 @@ class FlashFragment : BaseUIFragment<FlashViewModel, FragmentFlashMd2Binding>() 
 
         /* Flashing is understood as installing / flashing magisk itself */
 
-        fun flashIntent(context: Context, file: File, isSecondSlot: Boolean, id: Int = -1) = args(
-            installer = file.toUri(),
-            action = flashType(isSecondSlot),
-            dismissId = id
-        ).let { createIntent(context, it) }
-
-        fun flash(file: File, isSecondSlot: Boolean, id: Int) = toFlash(
-            installer = file.toUri(),
-            action = flashType(isSecondSlot),
-            dismissId = id
-        ).let { BaseUIActivity.postDirections(it) }
+        fun flash(isSecondSlot: Boolean) = MainDirections.actionFlashFragment(
+            action = flashType(isSecondSlot)
+        )
 
         /* Patching is understood as injecting img files with magisk */
 
-        fun patchIntent(context: Context, file: File, uri: Uri, id: Int = -1) = args(
-            installer = file.toUri(),
+        fun patch(uri: Uri) = MainDirections.actionFlashFragment(
             action = Const.Value.PATCH_FILE,
-            additionalData = uri,
-            dismissId = id
-        ).let { createIntent(context, it) }
-
-        fun patch(file: File, uri: Uri, id: Int) = toFlash(
-            installer = file.toUri(),
-            action = Const.Value.PATCH_FILE,
-            additionalData = uri,
-            dismissId = id
-        ).let { BaseUIActivity.postDirections(it) }
+            additionalData = uri
+        )
 
         /* Uninstalling is understood as removing magisk entirely */
 
-        fun uninstallIntent(context: Context, file: File, id: Int = -1) = args(
-            installer = file.toUri(),
-            action = Const.Value.UNINSTALL,
-            dismissId = id
-        ).let { createIntent(context, it) }
-
-        fun uninstall(file: File, id: Int) = toFlash(
-            installer = file.toUri(),
-            action = Const.Value.UNINSTALL,
-            dismissId = id
-        ).let { BaseUIActivity.postDirections(it) }
+        fun uninstall() = MainDirections.actionFlashFragment(
+            action = Const.Value.UNINSTALL
+        )
 
         /* Installing is understood as flashing modules / zips */
 
-        fun installIntent(context: Context, file: File, id: Int = -1) = args(
-            installer = file.toUri(),
+        fun installIntent(context: Context, file: Uri, id: Int = -1) = FlashFragmentArgs(
             action = Const.Value.FLASH_ZIP,
+            additionalData = file,
             dismissId = id
         ).let { createIntent(context, it) }
 
-        fun install(file: File, id: Int) = toFlash(
-            installer = file.toUri(),
+        fun install(file: Uri, id: Int) = MainDirections.actionFlashFragment(
             action = Const.Value.FLASH_ZIP,
+            additionalData = file,
             dismissId = id
-        ).let { BaseUIActivity.postDirections(it) }
+        )
     }
 
 }

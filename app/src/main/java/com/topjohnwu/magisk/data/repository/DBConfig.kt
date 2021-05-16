@@ -2,13 +2,15 @@ package com.topjohnwu.magisk.data.repository
 
 import com.topjohnwu.magisk.core.magiskdb.SettingsDao
 import com.topjohnwu.magisk.core.magiskdb.StringDao
-import io.reactivex.schedulers.Schedulers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
 
 interface DBConfig {
-    val settingsDao: SettingsDao
-    val stringDao: StringDao
+    val settingsDB: SettingsDao
+    val stringDB: StringDao
 
     fun dbSettings(
         name: String,
@@ -38,17 +40,19 @@ class DBSettingsValue(
     @Synchronized
     override fun getValue(thisRef: DBConfig, property: KProperty<*>): Int {
         if (value == null)
-            value = thisRef.settingsDao.fetch(name, default).blockingGet()
-        return value!!
+            value = runBlocking {
+                thisRef.settingsDB.fetch(name, default)
+            }
+        return value as Int
     }
 
     override fun setValue(thisRef: DBConfig, property: KProperty<*>, value: Int) {
         synchronized(this) {
             this.value = value
         }
-        thisRef.settingsDao.put(name, value)
-            .subscribeOn(Schedulers.io())
-            .subscribe()
+        GlobalScope.launch {
+            thisRef.settingsDB.put(name, value)
+        }
     }
 }
 
@@ -77,7 +81,9 @@ class DBStringsValue(
     @Synchronized
     override fun getValue(thisRef: DBConfig, property: KProperty<*>): String {
         if (value == null)
-            value = thisRef.stringDao.fetch(name, default).blockingGet()
+            value = runBlocking {
+                thisRef.stringDB.fetch(name, default)
+            }
         return value!!
     }
 
@@ -87,19 +93,23 @@ class DBStringsValue(
         }
         if (value.isEmpty()) {
             if (sync) {
-                thisRef.stringDao.delete(name).blockingAwait()
+                runBlocking {
+                    thisRef.stringDB.delete(name)
+                }
             } else {
-                thisRef.stringDao.delete(name)
-                    .subscribeOn(Schedulers.io())
-                    .subscribe()
+                GlobalScope.launch {
+                    thisRef.stringDB.delete(name)
+                }
             }
         } else {
             if (sync) {
-                thisRef.stringDao.put(name, value).blockingAwait()
+                runBlocking {
+                    thisRef.stringDB.put(name, value)
+                }
             } else {
-                thisRef.stringDao.put(name, value)
-                    .subscribeOn(Schedulers.io())
-                    .subscribe()
+                GlobalScope.launch {
+                    thisRef.stringDB.put(name, value)
+                }
             }
         }
     }
